@@ -1,0 +1,1229 @@
+#undecided
+  #sky attack
+  #flower shield
+  #electro drift
+  
+#REWORKED MOVES
+#===============================================================================
+# Entry hazard. Lays stealth rocks on the opposing side. 
+# (Fire Spin, Sand Tomb, Whirlpool)
+#===============================================================================
+class Battle::Move::SetHazard < Battle::Move
+  def canMagicCoat?; return true; end
+
+  def pbEffectGeneral(user)
+    user.pbOpposingSide.effects[PBEffects::Hazard] = 5
+    user.pbOpposingSide.effects[PBEffects::HazardMove] = @id
+    @battle.pbDisplay(_INTL("{1} releashed a vortex at the opposing side of the field!",
+                            user.pbThis(true)))
+  end
+end
+
+#===============================================================================
+# Avoids all priority attacks after using the move.
+# (Fly)
+#===============================================================================
+class Battle::Move::UserAvoidsPriorityMoves < Battle::Move 
+  def initialize(battle, move)
+    super
+    @effect = PBEffects::Fly
+  end
+  
+  def pbDisplayChargeMessage(user)
+    user.effects[PBEffects::Fly] = true
+    @battle.pbDisplay(_INTL("{1} is manoeuvering around the battlefield!", user.pbThis))
+    #@battle.pbDisplay(_INTL("A. fly = {1}!", user.effects[PBEffects::Fly]))
+  end
+end
+
+#===============================================================================
+# Battler in user's position is healed by 1/2 of its max HP, at the end of the
+# next round. Cures status
+# (Healing Wish)
+#===============================================================================
+class Battle::Move::HealHPnStatusCondOnUserPositionNextTurn < Battle::Move
+  def healingMove?; return true; end
+  def canSnatch?;   return true; end
+
+  def pbMoveFailed?(user, targets)
+    if @battle.positions[user.index].effects[PBEffects::Wish] > 0
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+
+  def pbEffectGeneral(user)
+    @battle.positions[user.index].effects[PBEffects::Wish]       = 2
+    @battle.positions[user.index].effects[PBEffects::WishAmount] = (user.totalhp / 2.0).round
+    @battle.positions[user.index].effects[PBEffects::WishMaker]  = user.pokemonIndex
+    @battle.positions[user.index].effects[PBEffects::HealingWish]= 2
+  end
+end
+
+#===============================================================================
+# Increases the user's Sp. Attack and Sp. Defense by 1 stage each.
+# Double stat boosts on electric terrain. 
+# (Charge)
+#===============================================================================
+class Battle::Move::RaiseUserSpAtkSpDef1Or2xOnElectricTerr < Battle::Move::MultiStatUpMove
+  def initialize(battle, move)
+    super
+    @statUp = [:SPECIAL_ATTACK, 1, :SPECIAL_DEFENSE, 1]
+  end
+
+  def pbOnStartUse(user, targets)
+    increment = 1
+    increment = 2 if @battle.field.terrain == :Electric && user.affectedByTerrain?
+    @statUp[1] = @statUp[3] = increment
+  end
+end
+
+#===============================================================================
+# Increases the user's Sp. Attack and Sp. Defense by 1 stage each.
+# Double stat boosts on Psychic Terrain. 
+# (Cosmic Power)
+#===============================================================================
+class Battle::Move::RaiseUserSpAtkSpDef1Or2xOnElectricTerr < Battle::Move::MultiStatUpMove
+  def initialize(battle, move)
+    super
+    @statUp = [:DEFENSE, 1, :SPECIAL_DEFENSE, 1]
+  end
+
+  def pbOnStartUse(user, targets)
+    increment = 1
+    increment = 2 if @battle.field.terrain == :Psychic && user.affectedByTerrain?
+    @statUp[1] = @statUp[3] = increment
+  end
+end
+
+#===============================================================================
+# Increased power in Misty Terrain. Freezes Target.
+# (Mist Ball)
+#===============================================================================
+class Battle::Move::FreezeTargetDoublePowerInMistyTerrain < Battle::Move::FreezeTarget
+   def pbBaseDamage(baseDmg, user, target)
+    if @battle.field.terrain == :Misty
+      baseDmg *= 1.5
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# This attack is always a critical hit. Burns target.
+# (Flame Burst)
+#===============================================================================
+class Battle::Move::AlwaysCriticalHit < Battle::Move::BurnTarget
+  def pbCritialOverride(user, target); return 1; end
+end
+  
+#===============================================================================
+# If Electric Terrain applies, user's Attack increases by 1 stage.
+# (Wild Charge)
+#===============================================================================
+class Battle::Move::RaiseUserAtk1OnElectricTerr < Battle::Move  
+  attr_reader :statUp
+
+  def initialize(battle, move)
+    super
+    @statUp = [:ATTACK, 1]
+  end
+
+  def pbEffectAfterAllHits(user, target)
+    #@battle.pbDisplay(_INTL("in func!"))
+    return if !user.pbCanRaiseStatStage?(@statUp[0], user, self)
+    #@battle.pbDisplay(_INTL("still in!"))
+    #@battle.pbDisplay(_INTL("terrain = {1}!", @battle.field.terrain))
+    if @battle.field.terrain == :Electric && user.affectedByTerrain?
+      user.pbRaiseStatStage(@statUp[0], @statUp[1], user)
+    end
+  end
+end
+
+#===============================================================================
+# Power is doubled if the target is burned. Burns target.
+# (Searing Shot)
+#===============================================================================
+class Battle::Move::BurnTargetDoublePowerIfTargetBurned < Battle::Move::BurnTarget
+  def pbBaseDamage(baseDmg, user, target)
+    if target.burned? &&
+       (target.effects[PBEffects::Substitute] == 0 || ignoresSubstitute?(user))
+      baseDmg *= 2
+    end
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Might start Electric Terrain.
+# (Plasma Fists)
+#===============================================================================
+class Battle::Move::MightStartElectricTerrain < Battle::Move
+  def pbEffectGeneral(user)
+    chance = 10
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      chance *= 2
+    end
+    return if chance == 0
+    if @battle.field.terrain != :Electric && @battle.pbRandom(100) < chance
+      @battle.pbStartTerrain(user, :Electric)
+    end
+  end
+end
+
+#===============================================================================
+# Heals user by 1/4 of its max HP.
+# (Pollen Puff)
+#===============================================================================
+class Battle::Move::HealUserQuarterOfTotalHP < Battle::Move::HealingMove
+  def pbHealAmount(user)
+    return (user.totalhp / 4.0).round
+  end
+end
+
+#===============================================================================
+# Decreases the target's Defense by 1 stage.
+# User takes recoil damage equal to 1/3 of the damage this move dealt.
+# (Twinkle Tackle)
+#===============================================================================
+class Battle::Move::RecoilThirdOfDamageDealtLowerTargetDefense1 < Battle::Move::TargetStatDownMove
+  def recoilMove?;                  return true; end
+  def pbRecoilDamage(user, target); return 1;    end
+     
+  def initialize(battle, move)
+    super
+    @statDown = [:DEFENSE, 1]
+  end
+  
+  def pbRecoilDamage(user, target)
+    return (target.damageState.totalHPLost / 3.0).round
+  end
+
+  def pbEffectAfterAllHits(user, target)
+    return if target.damageState.unaffected
+    if target.pbCanLowerStatStage?(@statDown[0], user, self)
+      target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+    end
+    return if !user.takesIndirectDamage?
+    return if user.hasActiveAbility?(:ROCKHEAD)
+    return if user.hasActiveItem?(:HEAVYARMOR)
+    amt = pbRecoilDamage(user, target)
+    amt = 1 if amt < 1
+    user.pbReduceHP(amt, false)
+    @battle.pbDisplay(_INTL("{1} is damaged by recoil!", user.pbThis))
+    user.pbItemHPHealCheck
+  end
+end
+
+#===============================================================================
+# User takes recoil damage equal to 1/4 of the damage this move dealt.
+# (Photon Geyser)
+#===============================================================================
+class Battle::Move::RecoilThirdOfDamageDealtRaiseUserSpeed1 < Battle::Move::RecoilMove
+  def pbRecoilDamage(user, target)
+    return (target.damageState.totalHPLost / 4.0).round
+  end
+
+  def pbBaseDamage(baseDmg, user, target)
+    if [:Sun, :HarshSun].include?(user.effectiveWeather)
+      baseDmg *= 1.5
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+#REWORKED MOVES
+#GEN 8 PLA MOVES
+#===============================================================================
+# Decreases the target's Defense by 1 stage.
+# Flinch Target.
+# (Triple Arrows)
+#===============================================================================
+class Battle::Move::FlinchTargetLowerTargetDefense1 < Battle::Move::TargetStatDownMove     
+  def flinchingMove?; return true; end
+      
+  def initialize(battle, move)
+    super
+    @statDown = [:DEFENSE, 1]
+  end
+
+  def pbAdditionalEffect(user, target)
+    return if target.damageState.substitute
+    #flinch chance
+    flinchChance = 30
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      flinchChance *= 2
+    end
+    if flinchChance > 0
+      target.pbFlinch(user) if @battle.pbRandom(100) < flinchChance
+    end
+    #lower defense chance
+    lowerDefChance = 50
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      lowerDefChance *= 2
+    end
+    return if lowerDefChance == 0
+    if target.pbCanLowerStatStage?(@statDown[0], user, self) && @battle.pbRandom(100) < lowerDefChance
+      target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+    end
+  end
+end
+
+#===============================================================================
+# Power is doubled if the target has status problem. 
+# Freezes target.
+# (Infernal Parade)
+#===============================================================================
+class Battle::Move::BurnTargetDoublePowerIfTargetStatusProblem < Battle::Move::BurnTarget
+  def pbBaseDamage(baseDmg, user, target)
+    if target.pbHasAnyStatus? &&
+       (target.effects[PBEffects::Substitute] == 0 || ignoresSubstitute?(user))
+      baseDmg *= 2
+    end
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Binding move. Sticks for 5 rounds. Binded Pokémon lose 1/8 of max HP
+# at end of each round.
+# (Ceaseless Edge, Infestation, Infested Waters)
+#===============================================================================
+class Battle::Move::BindTarget < Battle::Move 
+  def pbEffectAgainstTarget(user, target)
+    return if target.fainted? || target.damageState.substitute
+    return if target.effects[PBEffects::Binding] > 0
+    # Set trapping effect duration and info
+    target.effects[PBEffects::Binding] = 5
+    target.effects[PBEffects::BindingMove] = @id
+    target.effects[PBEffects::BindingUser] = user.index
+    # Message
+    msg = _INTL("{1} was hurt by {2}!", target.pbThis, target.effects[PBEffects::BindingMove])
+    case @id
+    when :INFESTATION
+      msg = _INTL("{1} has been afflicted with an infestation by {2}!", target.pbThis, user.pbThis(true))
+    when :CEASELESSEDGE
+      msg = _INTL("Shell splinters dug into {1} by {2}!", target.pbThis, user.pbThis(true))
+    when :INFESTEDWATERS
+      msg = _INTL("{1} has been afflicted with an infestation by {2}!", target.pbThis, user.pbThis(true))
+    when :WRAP
+      msg = _INTL("{1} has been wrapped by {2}!", target.pbThis, user.pbThis(true))
+    end
+    @battle.pbDisplay(msg)
+  end
+end
+
+#===============================================================================
+# Power is doubled if the target has status problem. 
+# Poisons target.
+# (Barb Barrage)
+#===============================================================================
+class Battle::Move::PoisonTargetDoublePowerIfTargetStatusProblem < Battle::Move::PoisonTarget
+  def pbBaseDamage(baseDmg, user, target)
+    if target.pbHasAnyStatus? &&
+       (target.effects[PBEffects::Substitute] == 0 || ignoresSubstitute?(user))
+      baseDmg *= 2
+    end
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# May burn, poison or sleep the target.
+# (Dire Claw)
+#===============================================================================
+class Battle::Move::PoisonParalyzeSleepTarget < Battle::Move
+  def pbAdditionalEffect(user, target)
+    #@battle.pbDisplay(_INTL("in func!"))
+    r = battle.pbRandom(3)
+    case r
+    when 0
+      if target.pbCanSleep?(user, false, self)
+        msg = _INTL("{1} made {2} fall asleep!", user.pbThis(true), target.pbThis)
+        target.pbSleep(msg)
+      end
+    when 1
+      if target.pbCanPoison?(user, false, self)
+        msg = _INTL("{1} poisoned {2}!", user.pbThis(true), target.pbThis)
+        target.pbPoison(target, msg)
+      end
+    when 2
+      if target.pbCanParalyze?(user, false, self)
+        msg = _INTL("{1} paralyzed {2}! It may be unable to move!", user.pbThis(true), target.pbThis)
+        target.pbParalyze(target, msg)
+      end
+    end
+  end
+end
+
+#===============================================================================
+# Power is doubled if the target has status problem. 
+# Freezes target.
+# (Bitter Malice)
+#===============================================================================
+class Battle::Move::FreezeTargetDoublePowerIfTargetStatusProblem < Battle::Move::FreezeTarget
+  def pbBaseDamage(baseDmg, user, target)
+    if target.pbHasAnyStatus? &&
+       (target.effects[PBEffects::Substitute] == 0 || ignoresSubstitute?(user))
+      baseDmg *= 2
+    end
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Might increase the user's Sp. Attack and/or Sp. Defense by 1 stage each. 
+# (Mystical Power)
+#===============================================================================
+class Battle::Move::RaiseUserSpAt1OrSpDef1OrBoth < Battle::Move::MultiStatUpMove
+  def initialize(battle, move)
+    super
+    @statUp = [:SPECIAL_ATTACK, 1, :SPECIAL_DEFENSE, 1]
+  end
+  
+  def pbAdditionalEffect(user, target)  
+    chanceSpAt = 30
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      chanceSpAt *= 2
+    end
+    if @battle.pbRandom(100) < chanceSpAt && 
+      user.pbCanRaiseStatStage?(:SPECIAL_ATTACK, user, self) && chanceSpAt > 0
+      user.pbRaiseStatStage(:SPECIAL_ATTACK, 1, user)
+    end
+    chanceSpDef = 30
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      chanceSpDef *= 2
+    end
+    return if chanceSpDef == 0
+    if @battle.pbRandom(100) < chanceSpDef && 
+      user.pbCanRaiseStatStage?(:SPECIAL_DEFENSE, user, self)
+      user.pbRaiseStatStage(:SPECIAL_DEFENSE, 1, user)
+    end
+  end
+end
+
+#=============================================================================== 
+# Paralyzes the target. Accuracy perfect in rain & electric terrain
+# (Wildbolt Storm)
+#===============================================================================
+class Battle::Move::ParalyzeTargetAlwaysHitsInRainElectricTerr < Battle::Move::ParalyzeTarget
+  def pbBaseAccuracy(user, target)
+    if [:Rain, :HeavyRain].include?(user.effectiveWeather)
+      return 0
+    end
+    if @battle.field.terrain == :Electric
+      return 0
+    end
+    if @battle.field.terrain != :Electric
+      return 50
+    end
+    return super
+  end
+end
+
+#=============================================================================== 
+# Frostbites the target. Accuracy perfect in rain & hail
+# (Bleakwind Storm)
+#===============================================================================
+class Battle::Move::FreezeTargetAlwaysHitsInRainHail < Battle::Move::FreezeTarget
+  def pbBaseAccuracy(user, target)
+    if [:Rain, :HeavyRain, :Hail].include?(user.effectiveWeather)
+      return 0
+    end
+    if [:Sun, :HarshSun, :Sandstorm].include?(user.effectiveWeather)
+      return 50
+    end
+    return super
+  end
+end
+
+#=============================================================================== 
+# Burns the target. Accuracy perfect in sandstorm & sun
+# (Sandsear Storm)
+#===============================================================================
+class Battle::Move::BurnTargetAlwaysHitsInSunSandstorm < Battle::Move::BurnTarget
+  def pbBaseAccuracy(user, target)
+    if [:Sun, :HarshSun, :Sandstorm].include?(user.effectiveWeather)
+      return 0
+    end
+    if [:Rain, :HeavyRain, :Hail].include?(user.effectiveWeather)
+      return 50
+    end
+    if @battle.field.terrain == :Grassy
+      return 50
+    end
+    return super
+  end
+end
+
+#===============================================================================
+# Decreases the target's evasion by 1 stage. 
+# Attracts the target.
+# Perfect accuracy on Misty & Grassy Terrain. 
+# Lower accuracy on Electric Terr & Sandstorm & Hail
+# (Springtide Storm)
+#===============================================================================
+class Battle::Move::InfatuateLowerTargetEvasion1AlwaysHitsInMistyGrassyTerr < Battle::Move::AttractTarget   
+  attr_reader :statDown
+  
+  def initialize(battle, move)
+    super
+    @statDown = [:EVASION, 1]
+  end
+  
+  def pbEffectAgainstTarget(user, target)
+    return if damagingMove?
+    chance = 30
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      chance *= 2
+    end
+    return if chance == 0
+    if @battle.pbRandom(100) < chance
+      target.pbAttract(user)
+    end
+    target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+  end
+  
+  def pbAdditionalEffect(user, target)
+  def pbAdditionalEffect(user, target)
+    return if target.damageState.substitute
+    return if !target.pbCanLowerStatStage?(@statDown[0], user, self)
+    target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+    chance = 30
+    if user.hasActiveAbility?(:SERENEGRACE) || user.pbOwnSide.effects[PBEffects::Rainbow] > 0
+      chance *= 2
+    end
+    return if chance == 0
+    if @battle.pbRandom(100) < chance
+      target.pbAttract(user) if target.pbCanAttract?(user, false)
+    end
+  end
+  
+  def pbBaseAccuracy(user, target)
+    if @battle.field.terrain == :Misty
+      return 0
+    end
+    if @battle.field.terrain == :Grassy
+      return 0
+    end
+    if @battle.field.terrain == :Electric 
+      return 50
+    end
+    if [:Sandstorm, :Hail].include?(user.effectiveWeather)
+      return 50
+    end
+    return super
+  end
+end
+#GEN 8 PLA MOVES
+#GEN 8 MOVES
+#===============================================================================
+# Increases the user's Speed by 1 stage. 
+# User takes recoil damage equal to 1/3 of the damage this move dealt.
+# (Flutterby Strike, Skydive)
+#===============================================================================
+class Battle::Move::RecoilThirdOfDamageDealtRaiseUserSpeed1 < Battle::Move::StatUpMove
+  def recoilMove?;                  return true; end
+  def pbRecoilDamage(user, target); return 1;    end
+    
+  def initialize(battle, move)
+    super
+    @statUp = [:SPEED, 1]
+  end
+  
+  def pbRecoilDamage(user, target)
+    return (target.damageState.totalHPLost / 3.0).round
+  end
+  
+  def pbEffectAfterAllHits(user, target)
+    return if target.damageState.unaffected
+    if user.pbCanRaiseStatStage?(@statUp[0], user, self)
+      user.pbRaiseStatStage(@statUp[0], @statUp[1], user)
+    end
+    return if !user.takesIndirectDamage?
+    return if user.hasActiveAbility?(:ROCKHEAD)
+    return if user.hasActiveItem?(:HEAVYARMOR)
+    amt = pbRecoilDamage(user, target)
+    amt = 1 if amt < 1
+    user.pbReduceHP(amt, false)
+    @battle.pbDisplay(_INTL("{1} is damaged by recoil!", user.pbThis))
+    user.pbItemHPHealCheck
+  end
+end
+
+#===============================================================================
+# Doubles power if target has raised stats 
+# (Burning Jealousy, Vicious Envy)
+#===============================================================================
+class Battle::Move::PowerDoublesIfTargetHasStatUps < Battle::Move
+  def pbBaseDamage(baseDmg, user, target)
+    if target.hasRaisedStatStages?
+      baseDmg *= 2 
+      @battle.pbDisplay(_INTL("basedmg = {1}!", baseDmg))
+    end
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Two turn attack. Skips first turn, attacks second turn. 
+# In psychic terrain, takes 1 turn instead.
+# (Meteor Beam)
+#===============================================================================
+class Battle::Move::TwoTurnAttackOneTurnInPsychicTerr < Battle::Move::TwoTurnMove
+  def initialize(battle, move)
+    super
+    @statUp = [:SPECIAL_ATTACK, 1]
+  end
+  
+  def pbIsChargingTurn?(user)
+    ret = super
+    if !user.effects[PBEffects::TwoTurnAttack] && 
+        @battle.field.terrain == :Psychic && user.affectedByTerrain?
+      @powerHerb = false
+      @chargingTurn = true
+      @damagingTurn = true
+      return false
+    end
+    return ret
+  end
+
+  def pbChargingTurnMessage(user, targets)
+    @battle.pbDisplay(_INTL("{1} is overflowing with space power!", user.pbThis))
+    user.pbRaiseStatStage(@statUp[0], @statUp[1], user)
+  end
+end
+#GEN 8 MOVES
+#GEN 9 MOVES
+#===============================================================================
+# User is protected against damaging moves this round. Decreases the Speed of
+# the user of a stopped contact move. 
+# (Silk Trap)
+#===============================================================================
+class Battle::Move::ProtectUserFromDamagingMovesSilkTrap < Battle::Move::ProtectMove
+  def initialize(battle, move)
+    super
+    @effect = PBEffects::SilkTrap
+  end
+end
+
+#===============================================================================
+# If attack misses, user takes crash damage of 1/2 of max HP.
+# Confuses target.
+# (Axe Kick)
+#===============================================================================
+class Battle::Move::ConfuseTargetCrashDamageIfFailsUnusableInGravity < Battle::Move::ConfuseTarget
+  def recoilMove?;        return true; end
+  def unusableInGravity?; return true; end
+
+  def pbCrashDamage(user)
+    return if !user.takesIndirectDamage?
+    @battle.pbDisplay(_INTL("{1} kept going and crashed!", user.pbThis))
+    @battle.scene.pbDamageAnimation(user)
+    user.pbReduceHP(user.totalhp / 2, false)
+    user.pbItemHPHealCheck
+    user.pbFaint if user.fainted?
+  end
+end
+
+#===============================================================================
+# Revives ally.
+# (Revival Blessing)
+#===============================================================================
+class Battle::Move::ReviveAlly < Battle::Move
+  def pbEffectGeneral(user)
+    @battle.eachInTeamFromBattlerIndex(user.index) do |pkmn, i|
+    next if pkmn.able? 
+    pkmn.hp = (pkmn.totalhp / 2).floor
+    pkmn.hp = 1 if pkmn.hp <= 0
+    pkmn.heal_status
+    @battle.pbDisplay(_INTL("{1}'s HP was restored.", pkmn.name))
+    break
+    end
+  end
+end
+
+#===============================================================================
+# Doubles in power if HP<100%. 
+# (Rage Fist, Rage Dust,)
+#===============================================================================
+class Battle::Move::DoublePowerIfDamaged  < Battle::Move
+  def pbBaseDamage(baseDmg, user, target)
+    baseDmg *= 2 if user.hp < user.totalhp 
+    #@battle.pbDisplay(_INTL("basedmg = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Power increases for each fainted ally.
+# (Last Respects, Avenge)
+#===============================================================================
+class Battle::Move::PowerDependsOnFaintedAllies < Battle::Move
+  def pbBaseDamage(baseDmg, user, target)
+    @faintedList = []
+    @battle.eachInTeamFromBattlerIndex(user.index) do |pkmn, i|
+    next if pkmn.able? 
+      @faintedList.push(i)
+    end
+    faintedAllies = @faintedList.length
+    baseDmg = baseDmg + baseDmg*faintedAllies
+    #@battle.pbDisplay(_INTL("fainted allies = {1}!", faintedAllies))
+    #@battle.pbDisplay(_INTL("basedmg = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# User creates substitute then switches out.
+# (Shed Tail)
+#===============================================================================
+class Battle::Move::SwitchOutSubstitute < Battle::Move::UserMakeSubstitute
+  def pbMoveFailed?(user, targets)
+    if user.wild?
+      if !@battle.pbCanRun?(user.index) || user.allAllies.length > 0
+        @battle.pbDisplay(_INTL("But it failed!"))
+        return true
+      end
+    elsif !@battle.pbCanChooseNonActive?(user.index)
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    if user.effects[PBEffects::Substitute] > 0
+      @battle.pbDisplay(_INTL("{1} already has a substitute!", user.pbThis))
+      return true
+    end
+    @subLife = [user.totalhp / 4, 1].max
+    if user.hp <= @subLife
+      @battle.pbDisplay(_INTL("But it does not have enough HP left to make a substitute!"))
+      return true
+    end
+    return false
+  end  
+
+  def pbEndOfMoveUsageEffect(user, targets, numHits, switchedBattlers)
+    switcher = user
+    return if user.wild?
+    return if switcher.fainted? || numHits == 0
+    return if !@battle.pbCanChooseNonActive?(switcher.index)
+    @battle.pbDisplay(_INTL("{1} went back to {2}!", user.pbThis,
+                            @battle.pbGetOwnerName(user.index)))
+    @battle.pbPursuit(user.index)
+    return if user.fainted?
+    newPkmn = @battle.pbGetReplacementPokemonIndex(user.index)   # Owner chooses
+    return if newPkmn < 0
+    @battle.pbRecallAndReplace(user.index, newPkmn)
+    @battle.pbClearChoice(user.index)   # Replacement Pokémon does nothing this round
+    @battle.moldBreaker = false if switcher.index == user.index
+    @battle.pbOnBattlerEnteringBattle(user.index)
+    switchedBattlers.push(user.index)
+    user.effects[PBEffects::Trapping]     = 0
+    user.effects[PBEffects::TrappingMove] = nil
+    user.effects[PBEffects::Substitute]   = @subLife
+    @battle.pbDisplay(_INTL("{1} put in a substitute!", user.pbThis))
+  end
+
+  def pbEffectGeneral(user)
+    if user.wild?
+      @battle.pbDisplay(_INTL("{1} fled from battle!", user.pbThis))
+      @battle.decision = 3   # Escaped
+    end
+  end
+end
+
+#===============================================================================
+# Switches out user and starts hail weather. 
+# (Chilly Reception)
+#===============================================================================
+class Battle::Move::SwitchOutUserStartHailWeather < Battle::Move::SwitchOutUserStatusMove
+  attr_reader :weatherType
+  
+  def initialize(battle, move)
+    super
+    @weatherType = :Hail
+  end
+
+  def pbMoveFailed?(user, targets)
+    case @battle.field.weather
+    when :HarshSun
+      @battle.pbDisplay(_INTL("The extremely harsh sunlight was not lessened at all!"))
+      return true
+    when :HeavyRain
+      @battle.pbDisplay(_INTL("There is no relief from this heavy rain!"))
+      return true
+    when :StrongWinds
+      @battle.pbDisplay(_INTL("The mysterious air current blows on regardless!"))
+      return true
+    when @weatherType
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+  
+  def pbEffectGeneral(user)
+    @battle.pbStartWeather(user, @weatherType, true, false)
+  end
+  
+  def pbEndOfMoveUsageEffect(user, targets, numHits, switchedBattlers)
+    switcher = user
+    return if switcher.fainted? || numHits == 0
+    return if !@battle.pbCanChooseNonActive?(switcher.index)
+    @battle.pbDisplay(_INTL("{1} went back to {2}!", switcher.pbThis,
+                            @battle.pbGetOwnerName(switcher.index)))
+    @battle.pbPursuit(switcher.index)
+    return if switcher.fainted?
+    newPkmn = @battle.pbGetReplacementPokemonIndex(switcher.index)   # Owner chooses
+    return if newPkmn < 0
+    @battle.pbRecallAndReplace(switcher.index, newPkmn)
+    @battle.pbClearChoice(switcher.index)   # Replacement Pokémon does nothing this round
+    @battle.moldBreaker = false if switcher.index == user.index
+    @battle.pbOnBattlerEnteringBattle(switcher.index)
+    switchedBattlers.push(switcher.index)
+  end
+end
+
+#===============================================================================
+# Increases the user's Speed by 1 stage. 
+# User takes recoil damage equal to 1/2 of the damage this move dealt.
+# (Collision Course)
+#===============================================================================
+class Battle::Move::RecoilThirdOfDamageDealtRaiseUserSpeed1 < Battle::Move::StatUpMove
+  def initialize(battle, move)
+    super
+    @statUp = [:SPEED, 1]
+  end
+  
+  def pbRecoilDamage(user, target)
+    return (target.damageState.totalHPLost / 2.0).round
+  end
+  
+  def pbEffectAfterAllHits(user, target)
+    return if target.damageState.unaffected
+    if user.pbCanRaiseStatStage?(@statUp[0], user, self)
+      user.pbRaiseStatStage(@statUp[0], @statUp[1], user)
+    end
+    return if !user.takesIndirectDamage?
+    return if user.hasActiveAbility?(:ROCKHEAD)
+    return if user.hasActiveItem?(:HEAVYARMOR)
+    amt = pbRecoilDamage(user, target)
+    amt = 1 if amt < 1
+    user.pbReduceHP(amt, false)
+    @battle.pbDisplay(_INTL("{1} is damaged by recoil!", user.pbThis))
+    user.pbItemHPHealCheck
+  end
+end
+
+#===============================================================================
+# Increased power in Psychic Terrain.
+# (Psyblade)
+#===============================================================================
+class Battle::Move::IncreasePowerInPsychicTerrain < Battle::Move
+   def pbBaseDamage(baseDmg, user, target)
+    if @battle.field.terrain == :Psychic
+      baseDmg *= 1.5
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Two turn attack. Skips first turn, attacks second turn. 
+# In rain & electric terrain, takes 1 turn instead.
+# (Electro Shot)
+#===============================================================================
+class Battle::Move::TwoTurnAttackOneTurnInRainElectricTerr < Battle::Move::TwoTurnMove
+  def pbIsChargingTurn?(user)
+    ret = super
+    if !user.effects[PBEffects::TwoTurnAttack] &&
+       [:Rain, :HeavyRain].include?(user.effectiveWeather)
+      @powerHerb = false
+      @chargingTurn = true
+      @damagingTurn = true
+      return false
+    end
+    if !user.effects[PBEffects::TwoTurnAttack] && 
+        @battle.field.terrain == :Electric && user.affectedByTerrain?
+       #[:Rain, :HeavyRain].include?(user.effectiveWeather)
+      @powerHerb = false
+      @chargingTurn = true
+      @damagingTurn = true
+      return false
+    end
+    return ret
+  end
+
+  def pbChargingTurnMessage(user, targets)
+    @battle.pbDisplay(_INTL("{1} absorbed electricity!", user.pbThis))
+  end
+end
+#GEN 9 MOVES
+#NEW MOVES
+#Status Moves
+#===============================================================================
+# Causes the target to flinch. Fails if this isn't the user's first turn.
+# Increases the user's Attack by 2 stages.
+# (Moon Howl)
+#===============================================================================
+class Battle::Move::FlinchStatUpMoveFailsIfNotUserFirstTurn < Battle::Move::StatUpMove
+  def flinchingMove?; return true; end
+    
+  def initialize(battle, move)
+    super
+    @statUp = [:ATTACK, 2]
+  end
+
+  def pbEffectAgainstTarget(user, target)
+    return if damagingMove?
+    target.pbFlinch(user)
+  end
+
+  def pbAdditionalEffect(user, target)
+    user.pbRaiseStatStage(@statUp[0], @statUp[1], user)
+    return if target.damageState.substitute
+    target.pbFlinch(user)
+  end
+  
+  def pbMoveFailed?(user, targets)
+    if user.turnCount > 1
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+end
+
+#===============================================================================
+# Activates Mist & Charge
+# (Dark Cloud)
+#===============================================================================
+class Battle::Move::UserSideImmuneToStatDownCharge < Battle::Move
+  def canSnatch?; return true; end
+
+  def pbMoveFailed?(user, targets)
+    if user.pbOwnSide.effects[PBEffects::DarkCloud] > 0
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+
+  def pbEffectGeneral(user)
+    user.pbOwnSide.effects[PBEffects::DarkCloud] = 5
+    user.effects[PBEffects::Charge] = 5
+    @battle.pbDisplay(_INTL("{1} became shrouded in an electricly charged cloud!", user.pbTeam))
+  end
+end
+
+#===============================================================================
+# User is protected against moves with the "B" flag this round. If a Pokémon
+# makes contact with the user while this effect applies, that Pokémon is
+# burned. 
+# (Burning Shell)
+#===============================================================================
+class Battle::Move::ProtectUserBurningShell < Battle::Move::ProtectMove
+  def initialize(battle, move)
+    super
+    @effect = PBEffects::BurningShell
+  end
+end
+
+#===============================================================================
+# Lower the target's Attack by 1 stage. Infatuates the target regardless of gender. 
+# (Sweet Aroma)
+#===============================================================================
+class Battle::Move::AttractTargetLowerTargetAttack1 < Battle::Move::TargetStatDownMove
+  def canMagicCoat?; return true; end
+
+  def initialize(battle, move)
+    super
+    @statDown = [:ATTACK, 1]
+  end
+
+  def pbFailsAgainstTarget?(user, target, show_message)
+    if !target.pbCanLowerStatStage?(@statDown[0], user, self, show_message) && 
+          !target.pbCanAttract?(user, false, self)
+      return true
+    end
+    return false
+  end
+  
+  def pbEffectAgainstTarget(user, target)
+    if target.pbCanLowerStatStage?(:ATTACK, user, self)
+      target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+    end
+    target.pbAttract(user) if !target.infatuated?
+  end
+  
+  def pbAdditionalEffect(user, target)
+    #return if target.damageState.substitute
+    return if !target.pbCanLowerStatStage?(@statDown[0], user, self)
+    target.pbLowerStatStage(@statDown[0], @statDown[1], user)
+    target.pbAttract(user) if !target.infatuated?
+  end
+
+end
+
+#===============================================================================
+# Attracts the target. Poisons target.
+# (Toxic Aroma)
+#===============================================================================
+class Battle::Move::AttractPoisonTarget < Battle::Move
+  def initialize(battle, move)
+    super
+    @toxic = false
+  end
+
+  def pbFailsAgainstTarget?(user, target, show_message)
+    return false if damagingMove?
+    return !target.pbCanPoison?(user, show_message, self)
+    return true if !target.pbCanAttract?(user, show_message)
+    return false
+  end
+
+  def pbEffectAgainstTarget(user, target)
+    return if damagingMove?
+    target.pbPoison(user, nil, @toxic)
+    target.pbAttract(user)
+  end
+
+  def pbAdditionalEffect(user, target)
+    return if target.damageState.substitute
+    target.pbPoison(user, nil, @toxic) if target.pbCanPoison?(user, false, self)
+    target.pbAttract(user) if target.pbCanAttract?(user, false)
+  end
+end
+
+#Special Attacking Moves
+#===============================================================================
+# Attracts the target. Double power on infatuated target.
+# (Love Bomb)
+#===============================================================================
+class Battle::Move::AttractTargetDoublePowerIfTargetInfatuated < Battle::Move::AttractTarget
+   def pbBaseDamage(baseDmg, user, target)
+    if target.infatuated? 
+      baseDmg *= 2
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Removes all wether. 
+# (Air Wave)
+#===============================================================================
+class Battle::Move::RemoveWeather < Battle::Move::WeatherMove
+  def initialize(battle, move)
+    super
+    @weatherType = :None
+  end
+
+  def pbEffectGeneral(user)
+    @battle.pbDisplay(_INTL("{1} removed the weather from the battlefield!", user.pbThis))
+  end
+end
+
+#===============================================================================
+# Increased power in Sun.
+# (Sunblast)
+#===============================================================================
+class Battle::Move::IncreasePowerInSun < Battle::Move
+  def pbBaseDamage(baseDmg, user, target)
+    if [:Sun, :HarshSun].include?(user.effectiveWeather)
+      baseDmg *= 1.5
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Creates Quicksand at the opposing side. Stays for 3 turns. Deals 25% damage. 
+# (Quicksand) 
+#===============================================================================
+class Battle::Move::Quicksand< Battle::Move
+  def canMagicCoat?; return true; end
+
+  def pbEffectGeneral(user)
+    user.pbOpposingSide.effects[PBEffects::Quicksand] = 3
+    @battle.pbDisplay(_INTL("{1} created a quicksand at the opposing side of the field!",
+                            user.pbThis(true)))
+  end
+end
+
+#===============================================================================
+# Releashes Ignitable Gas on the battlefield. 
+# Next Fire-type move results in a critical-hit. 
+# The ignitable gas disappeares after a Fire-type move successfully lands.
+# (Ignitable Gas)
+#===============================================================================
+class Battle::Move::ReleashIgnitableGas < Battle::Move
+  def pbEffectGeneral(user)
+    @battle.field.effects[PBEffects::IgnitableGas] = true
+    @battle.pbDisplay(_INTL("{1} releashed flammable gas on the battlefield!", user.pbThis))
+  end
+end
+
+#===============================================================================
+# Effectiveness against Steel-type is 2x. 
+# (Melting Acid)
+#===============================================================================
+class Battle::Move::SuperEffectiveAgainstSteel < Battle::Move
+  def pbCalcTypeModSingle(moveType, defType, user, target)
+    return Effectiveness::SUPER_EFFECTIVE_MULTIPLIER if defType == :STEEL
+    return super
+  end
+end
+
+#Physical Attacking Moves
+#===============================================================================
+# Cursed Pokémon lose 1/4 of their max HP at the end of each round.
+# (Curse Bite)
+#===============================================================================
+class Battle::Move::CurseTarget < Battle::Move
+  def pbEffectAgainstTarget(user, target)
+    @battle.pbDisplay(_INTL("{1} laid a curse on {2}!", user.pbThis, target.pbThis(true)))
+    target.effects[PBEffects::Curse] = true
+  end
+end
+
+#===============================================================================
+# If Hail applies, priority is increased by 1, power doubles.
+# (Snow Sleigh)
+#===============================================================================
+class Battle::Move::HigherPriorityAndPowerInHail < Battle::Move
+  def pbPriority(user)
+    ret = super
+    ret += 1 if [:Hail].include?(user.effectiveWeather)
+    return ret
+  end
+  
+  def pbBaseDamage(baseDmg, user, target)
+    if [:Hail].include?(user.effectiveWeather)
+      baseDmg *= 2
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# Move cannot be used consecutively.
+# (Wrecking Ball)
+#===============================================================================
+class Battle::Move::CannotBeUsedConsecutively < Battle::Move
+  def pbMoveFailed?(user, targets)
+    if user.effects[PBEffects::WreckingBall] > 0
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+  
+  def pbEffectGeneral(user)
+    user.effects[PBEffects::WreckingBall] = 2
+    user.currentMove = @id
+  end
+end
+
+#===============================================================================
+# Makes the target drowsy; gets paralyzed at the end of the next turn. 
+# (Paralytic Poison)
+#===============================================================================
+class Battle::Move::ParalyzeTargetNextTurn < Battle::Move
+  def pbEffectAgainstTarget(user, target)
+    target.effects[PBEffects::ParalyticPoison] = 2
+    @battle.pbDisplay(_INTL("{1} injected {2} with paralytic poison!", user.pbThis, target.pbThis(true)))
+  end
+end
+
+#===============================================================================
+# Multi hit move. May badly poison the target on each hit. 
+# (Toxic Needles)
+#===============================================================================
+class Battle::Move::HitTwoTimesPoisonTarget < Battle::Move::PoisonTarget
+  def multiHitMove?;            return true; end
+    
+  def initialize(battle, move)
+    super
+    @toxic = true
+  end
+    
+  def pbNumHits(user, targets)
+    hitChances = [
+      2, 2, 2, 2, 2, 2, 2,
+      3, 3, 3, 3, 3, 3, 3,
+      4, 4, 4,
+      5, 5, 5
+    ]
+#DIALGA-1
+    if user.hasActiveItem?(:LOADEDDICE)
+      hitChances = [
+        5, 5, 5, 5, 5, 5, 5,
+        4, 4, 4, 4, 4, 4, 4,
+        3, 3, 3,
+        2, 2, 2
+      ]
+    end
+#DIALGA-2
+    r = @battle.pbRandom(hitChances.length)
+    r = hitChances.length - 1 if user.hasActiveAbility?(:SKILLLINK)
+    return hitChances[r]
+  end
+end
+
+#===============================================================================
+# Use Defense stat instead of Attack stat to calculate damage.
+# Might burn the target
+# (Meteor Crash)
+#===============================================================================
+class Battle::Move::UseDefenseInsteadOfAttackBurnTarget < Battle::Move::BurnTarget
+  def pbGetAttackStats(user, target)
+    return user.defense, user.stages[:DEFENSE] + Battle::Battler::STAT_STAGE_MAXIMUM
+  end
+end
+
+#===============================================================================
+# Increased power against fish and mammals.
+# (Piercing Strike)
+#===============================================================================
+class Battle::Move::IncreasePowerAgainstFishAndAnimal < Battle::Move
+   def pbBaseDamage(baseDmg, user, target)
+    #@battle.pbDisplay(_INTL("egg groups = {1}!", target.eggGroups))
+    if target.eggGroups.include?(:Field) || target.eggGroups.include?(:Water2)
+      baseDmg *= 1.5
+    end
+    #@battle.pbDisplay(_INTL("base damage = {1}!", baseDmg))
+    return baseDmg
+  end
+end
+
+#===============================================================================
+# User consumes target's berry and gains its effect. Multi-hit
+# (Munching)
+#===============================================================================
+class Battle::Move::MultiHitConsumeBerry < Battle::Move::HitTwoToFiveTimes
+  def preventsBattlerConsumingHealingBerry?(battler, targets)
+    return targets.any? { |b| b.index == battler.index } &&
+           battler.item&.is_berry? && Battle::ItemEffects::HPHeal[battler.item]
+  end
+
+  def pbEffectAfterAllHits(user, target)
+    return if user.fainted? || target.fainted?
+    return if target.damageState.unaffected || target.damageState.substitute
+    return if !target.item || !target.item.is_berry? || target.unlosableItem?(target.item)
+    return if target.hasActiveAbility?(:STICKYHOLD) && !@battle.moldBreaker
+    item = target.item
+    itemName = target.itemName
+    user.setBelched
+    target.pbRemoveItem
+    @battle.pbDisplay(_INTL("{1} stole and ate its target's {2}!", user.pbThis, itemName))
+    user.pbHeldItemTriggerCheck(item.id, false)
+    user.pbSymbiosis
+  end
+end
+end

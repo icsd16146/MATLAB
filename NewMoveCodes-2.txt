@@ -1,0 +1,256 @@
+#to fix
+  #pasttravel
+
+#Articuno
+#===============================================================================
+# Traps opponents. Misses if not Hail.
+# (Hailstorm)
+#===============================================================================
+class Battle::Move::TrapTargetMissIfNotHail < Battle::Move::TrapTarget
+  def pbMoveFailed?(user, targets)
+    if ![:Hail].include?(user.effectiveWeather)
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+end
+
+#Zapdos
+#===============================================================================
+# Hits 2-3 times. Misses if not Rain.
+# (Thunderstorm)
+#===============================================================================
+class Battle::Move::MultiHitMissIfNotRain < Battle::Move
+  def multiHitMove?;            return true; end
+  def pbNumHits(user, targets); return 3;    end
+    
+  def pbMoveFailed?(user, targets)
+    if ![:Rain, :HeavyRain].include?(user.effectiveWeather)
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+
+  def successCheckPerHit?
+    return @accCheckPerHit
+  end
+
+  def pbOnStartUse(user, targets)
+    @calcBaseDmg = 0
+    @accCheckPerHit = !user.hasActiveAbility?(:SKILLLINK)
+  end
+end
+
+#Moltres
+#===============================================================================
+# Transforms Grassy Terrain into Sea Of Fire. Misses if not Sun.
+# (Firestorm)
+#===============================================================================
+class Battle::Move::SetSeaOfFireMissIfNotSun < Battle::Move
+  def pbMoveFailed?(user, targets)
+    if ![:Sun, :HarshSun].include?(user.effectiveWeather)
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+  
+  def pbEffectGeneral(user)
+    @battle.pbDisplay(_INTL("The grass disappeared from the battlefield."))
+    @battle.field.terrain = :None
+    user.pbOpposingSide.effects[PBEffects::SeaOfFire] = 4
+  end
+end
+
+#Roquatro
+#===============================================================================
+# Decreases the target's Accuracy by 1 stage. Misses if not Sandstorm.
+# (Duststorm)
+#===============================================================================
+class Battle::Move::LowerTargetAcc1MissIfNotSand < Battle::Move::LowerTargetAccuracy1
+  def pbMoveFailed?(user, targets)
+    if ![:Sandstorm].include?(user.effectiveWeather)
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+end
+
+#Kyogre
+#===============================================================================
+# Creates Quicksand at the opposing side. Stays for 3 turns. Deals 25% damage. 
+# (Oceanic Flood) 
+#===============================================================================
+class Battle::Move::DrownTarget< Battle::Move
+  def pbEffectGeneral(user)
+    user.pbOpposingSide.effects[PBEffects::OceanicFlood] = 3
+    @battle.pbDisplay(_INTL("{1} created a flood at the opposing side of the field!",
+                            user.pbThis(true)))
+  end
+end
+
+#Xerneas
+#===============================================================================
+# Creates Aqua Ring. Heals status at the end of each turn. 
+# (Divine Breath)
+#===============================================================================
+class Battle::Move::HealStatusAquaRing < Battle::Move::StartHealUserEachTurn
+  def pbEffectGeneral(user)
+    user.effects[PBEffects::AquaRing] = true
+    user.effects[PBEffects::DivineBreath] = true
+    @battle.pbDisplay(_INTL("{1} started controlling its breathing!", user.pbThis))
+  end
+end
+
+#Manaphy
+#===============================================================================
+# Hits X times, where X is the number of non-user unfainted Water-type Pokémon
+# in the user's party (not including partner trainers). Fails if X is 0.
+# Base power of each hit depends on the base Attack stat for the species of that
+# hit's participant. 
+# (Icthyic Command)
+#===============================================================================
+class Battle::Move::WaterAlliesHitTarget < Battle::Move
+  def multiHitMove?; return true; end
+
+  def pbMoveFailed?(user, targets)
+    @beatUpList = []
+    @battle.eachInTeamFromBattlerIndex(user.index) do |pkmn, i|
+      next if !pkmn.able? || !@battle.pbParty(user.index)[i].hasType?(:WATER)
+      @beatUpList.push(i)
+      #@battle.pbDisplay(_INTL("1-{1}!", @beatUpList))
+    end
+    if @beatUpList.length == 0
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+
+  def pbNumHits(user, targets)
+    #@battle.pbDisplay(_INTL("length = {1}!", @beatUpList.length))
+    return @beatUpList.length
+  end
+
+  def pbBaseDamage(baseDmg, user, target)
+    i = @beatUpList.shift   # First element in array, and removes it from array
+    atk = @battle.pbParty(user.index)[i].baseStats[:SPECIAL_ATTACK]
+    @battle.pbDisplay(_INTL("{1} attacked!",@battle.pbParty(user.index)[i].name))
+    return 5 + (atk / 10)
+  end
+end
+
+#Shaymin/Skymin
+#===============================================================================
+# Creates Grassy Terrain. Creates Rainbow
+# (Gracidea Garden)
+#===============================================================================
+class Battle::Move::StartGrassyTerrSereneGrace < Battle::Move
+  def pbMoveFailed?(user, targets)
+    if @battle.field.terrain == :Grassy
+      @battle.pbDisplay(_INTL("But it failed!"))
+      return true
+    end
+    return false
+  end
+
+  def pbEffectGeneral(user)
+    @battle.pbStartTerrain(user, :Grassy)
+    user.pbOpposingSide.effects[PBEffects::Rainbow] = 4
+  end
+end
+
+#Celebi
+#===============================================================================
+# Two turn attack. Skips first turn, attacks second turn. Is invulnerable during
+# use. Boosts Attack, Sp.Attack & Speed on reappear. Cuts HP in half.
+# (Time Travel)
+#===============================================================================
+class Battle::Move::VanishThenBoostStatsLessHP < Battle::Move::TwoTurnMove
+  attr_reader :statUp
+
+  def initialize(battle, move)
+    super
+    @statUp = [:ATTACK, 2, :SPECIAL_ATTACK, 2, :SPEED, 2]
+  end
+
+  def pbMoveFailed?(user, targets)
+    if user.hp <= user.totalhp/2
+      @battle.pbDisplay(_INTL("But it does not have enough HP left to travel!"))
+      return true
+    end
+    return false if user.effects[PBEffects::TwoTurnAttack]   # Charging turn
+    failed = true
+    (@statUp.length / 2).times do |i|
+      next if !user.pbCanRaiseStatStage?(@statUp[i * 2], user, self)
+      failed = false
+      break
+    end
+    if failed
+      @battle.pbDisplay(_INTL("{1}'s stats won't go any higher!", user.pbThis))
+      return true
+    end
+    return false
+  end
+
+  def pbChargingTurnMessage(user, targets)
+    @battle.pbDisplay(_INTL("{1} vanished instantly!", user.pbThis))
+  end
+
+  def pbEffectGeneral(user)
+    return if !@damagingTurn
+    user.hp -= user.totalhp/2
+    showAnim = true
+    (@statUp.length / 2).times do |i|
+      next if !user.pbCanRaiseStatStage?(@statUp[i * 2], user, self)
+      if user.pbRaiseStatStage(@statUp[i * 2], @statUp[(i * 2) + 1], user, showAnim)
+        showAnim = false
+      end
+    end
+  end
+end
+
+#Celebi #DOESNT WORK
+#===============================================================================
+# Two turn attack. Skips first turn, attacks second turn. Is invulnerable during
+# use. Fully heals user on reappear. 
+# (Past Travel)
+#===============================================================================
+class Battle::Move::VanishThenHealP < Battle::Move::TwoTurnMove
+  def healingMove?;       return true; end
+  def pbHealAmount(user); return 1;    end
+
+  def pbChargingTurnMessage(user, targets)
+    @battle.pbDisplay(_INTL("{1} vanished instantly!", user.pbThis))
+  end
+  
+  def pbMoveFailed?(user, targets)
+    return false if user.effects[PBEffects::TwoTurnAttack]   # Charging turn
+    return false
+  end
+
+  def pbEffectGeneral(user)
+    #heal HP
+    #amt = pbHealAmount(user)
+    user.pbRecoverHP(user.totalhp)
+    @battle.pbDisplay(_INTL("{1}'s HP was restored.", user.pbThis))
+    #heal status
+    old_status = user.status
+    user.pbCureStatus(false)
+    case old_status
+    when :BURN
+      @battle.pbDisplay(_INTL("{1} healed its burn!", user.pbThis))
+    when :POISON
+      @battle.pbDisplay(_INTL("{1} cured its poisoning!", user.pbThis))
+    when :PARALYSIS
+      @battle.pbDisplay(_INTL("{1} cured its paralysis!", user.pbThis))
+    when :SLEEP
+      @battle.pbDisplay(_INTL("{1} woke up!", user.pbThis))
+    when :FROZEN
+      @battle.pbDisplay(_INTL("{1} healed its frostbite!", user.pbThis))
+    end
+  end
+end
