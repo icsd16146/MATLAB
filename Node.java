@@ -1,52 +1,60 @@
-package ai;
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package ai2;
 
-import java.util.Arrays;
+import java.util.Random;
 
+/**
+ *
+ * @author konstantina
+ */
 public class Node {
-
-    int people, times[], cost = 0, depth = 0;
-    Person[] s1, s2;
-    Node father;
-    String name, action;
     
-
-    Node(Person[] shore1, Person[] shore2, int cost, int depth, Node father, String name, String action) {
-        this.people = people;
-        this.times = times;
-        this.s1 = shore1;
-        this.s2 = shore2;
+    private Node father;
+    private int depth, cost;
+    private String action, name;
+    public PlexParticles a;
+    
+    Node(Node father, int depth, String action, int cost, PlexParticles a) {
         this.father = father;
+        this.action = action;
         this.depth = depth;
-        if (father != null) {
-            this.depth = father.getDepth() + 1;
-        }
         this.cost = cost;
-
-        this.name = name;
-        this.action=action;
-
+        this.a = a;
+        
+        Random rand = new Random();
+        int num = rand.nextInt(1000) + 1;
+        this.name = String.valueOf(depth) + "-" + String.valueOf(a.getX()) + "," + String.valueOf(a.getY() + "-" + String.valueOf(num));
     }
-
-    private int getDepth() {
-        return depth;
+    
+    public int getCost() {
+        return this.cost;
     }
-
-    private int getCost() {
-        return cost;
+    
+    public PlexParticles givePP() {
+        return a;
     }
-
-    public void show() {
-        System.out.print("Shore1 = " + Arrays.toString(s1) + "\nShore2 = " + Arrays.toString(s2)
-                + "\ndepth = " + depth + "\tcost = " + cost
-                + "\nnode's name= " + name);
-        if (father != null) {
-            System.out.print("\tfather's name = " + father.name+"\n");
+    
+    public Node getFather() {
+        return this.father;
+    }
+    
+    public int getDepth() {
+        return this.depth;
+    }
+    
+    void show() {
+        System.out.println("Position: " + a.getX() + "-" + a.getY());
+        if (father == null) {
+            System.out.println("Node's name: " + this.name + "\tNode's father: null");
+        } else {
+            System.out.println("Node's name: " + this.name + "\tNode's father: " + this.father.name);
         }
-        else{
-            System.out.println("\t father = null");
-        }
-        System.out.println("Action performed: "+ action);
-        System.out.println("");
+        System.out.println("Depth: " + this.depth + "\tCost: " + this.cost);
+        System.out.println("Action performed: " + this.action);
     }
-
+    
 }
